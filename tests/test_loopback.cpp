@@ -4,9 +4,9 @@
  * Tests ModeA (Normal) at a generous SNR.  Passes if the decoded
  * message matches the input.
  *
- * Audio is placed at the UTC-aligned decode window position (matching the
- * formula in api.cpp::Decoder::decode()) so the test remains valid after
- * the period-alignment fix.
+ * The nutc argument to decode() is now seconds-since-midnight
+ * (H*3600 + M*60 + S).  Audio is placed at the UTC-aligned kpos
+ * that decode() will compute from nutc % 60.
  */
 
 #include "gfsk8modem.h"
@@ -32,17 +32,21 @@ int main()
     if (pcm.empty()) { fprintf(stderr, "modulate failed\n"); return 1; }
     printf("modulated: %zu samples (%.2f s)\n", pcm.size(), pcm.size() / 12000.0);
 
+    // --- Compute nutc = seconds-since-midnight (capture time) ---
+    // Grab the clock once here and pass it to decode() as nutc so the
+    // kpos computation inside decode() uses the same instant as our
+    // audio placement below.
+    auto epoch_sec  = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    int const nutc = static_cast<int>(epoch_sec % 86400);  // seconds-since-midnight
+
     // --- Build 720000-sample snapshot ---
-    // Place audio at the UTC-aligned kpos that decode() will compute,
-    // so the signal falls exactly at the start of the search window.
     std::vector<int16_t> snap(GFSK8_RX_SAMPLE_SIZE, 0);
     int const period_sec = gfsk8::submodeParms(gfsk8::Submode::Normal).periodSeconds; // 15
     int const nmaxA      = period_sec * GFSK8_RX_SAMPLE_RATE;
 
-    auto epoch_sec  = std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    int sec_in_min  = static_cast<int>(epoch_sec % 60);
-    int elapsed     = sec_in_min % period_sec;
+    int const sec_in_min = nutc % 60;
+    int const elapsed    = sec_in_min % period_sec;
     int const kposA = std::max(0, GFSK8_RX_SAMPLE_SIZE - (elapsed + period_sec) * GFSK8_RX_SAMPLE_RATE);
 
     // Convert float PCM → int16, place at kposA
@@ -59,7 +63,7 @@ int main()
     int n_decoded = 0;
     std::string decoded_msg;
 
-    decoder.decode(std::span<const int16_t>(snap), 0,
+    decoder.decode(std::span<const int16_t>(snap), nutc,
         [&](const gfsk8::Decoded &d) {
             printf("DECODED  snr=%+d dB  freq=%.1f Hz  dt=%.2f s  msg=[%s]\n",
                    d.snrDb, d.frequencyHz, d.dtSeconds, d.message.c_str());

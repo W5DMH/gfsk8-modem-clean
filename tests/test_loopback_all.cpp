@@ -3,8 +3,8 @@
  *
  * For each submode (Normal, Fast, Turbo, Slow, Ultra):
  *   1. Packs a short message and modulates it.
- *   2. Computes the UTC-aligned decode window (replicating the formula in
- *      api.cpp::Decoder::decode()) and places the signal there.
+ *   2. Computes nutc (seconds-since-midnight) once, passes it to decode(),
+ *      and places audio at the kpos the decoder will compute from nutc % 60.
  *   3. Runs the decoder and verifies the message is recovered.
  *
  * Decoder constructor bitmask (NOT the Submode enum values):
@@ -19,22 +19,6 @@
 #include <cstdio>
 #include <cstring>
 #include <vector>
-
-// ---------------------------------------------------------------------------
-// Replicate the UTC-alignment formula from api.cpp so audio can be placed at
-// the exact position the decoder will search.  Called just before each decode
-// to minimise the chance of a period-boundary race (extremely unlikely even
-// without this precaution given period lengths of 4–30 s).
-// ---------------------------------------------------------------------------
-static int utcAlignedKpos(int period_sec)
-{
-    auto epoch_sec = std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    int sec_in_min = static_cast<int>(epoch_sec % 60);
-    int elapsed    = sec_in_min % period_sec;
-    int kpos       = GFSK8_RX_SAMPLE_SIZE - (elapsed + period_sec) * GFSK8_RX_SAMPLE_RATE;
-    return std::max(0, kpos);
-}
 
 struct SubmoodeSpec {
     const char       *name;
@@ -58,6 +42,14 @@ int main()
     const char  *kGrid     = "DM79";
     const char  *kText     = "HELLO";
 
+    // Capture nutc (seconds-since-midnight) once.  The same value is passed
+    // to decode() and used here to pre-compute kpos so audio placement and
+    // the decoder's search window are guaranteed to match.
+    auto epoch_sec = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    int const nutc        = static_cast<int>(epoch_sec % 86400);
+    int const sec_in_min  = nutc % 60;
+
     int failures = 0;
 
     for (auto const &spec : kSubmodes) {
@@ -72,7 +64,7 @@ int main()
         }
         printf("  pack: %zu frame(s)\n", frames.size());
 
-        // Modulate first frame only (should be enough to decode the header).
+        // Modulate first frame only.
         auto pcm = gfsk8::modulate(spec.sm, frames[0].frameType,
                                    frames[0].payload, kFreqHz);
         if (pcm.empty()) {
@@ -85,13 +77,13 @@ int main()
 
         // --- Build snapshot buffer ---
         std::vector<int16_t> snap(GFSK8_RX_SAMPLE_SIZE, 0);
-        int const nmax = spec.periodSec * GFSK8_RX_SAMPLE_RATE;
 
-        // Compute UTC-aligned kpos just before decode so it matches the
-        // value decode() will compute a moment later.
-        int const kpos = utcAlignedKpos(spec.periodSec);
-        printf("  kpos=%d  nmax=%d  buffer_end=%d\n",
-               kpos, nmax, GFSK8_RX_SAMPLE_SIZE);
+        // Compute kpos the same way decode() will from nutc % 60.
+        int const elapsed = sec_in_min % spec.periodSec;
+        int const kpos = std::max(0, GFSK8_RX_SAMPLE_SIZE
+                                     - (elapsed + spec.periodSec) * GFSK8_RX_SAMPLE_RATE);
+        printf("  nutc=%d  sec_in_min=%d  elapsed=%d  kpos=%d\n",
+               nutc, sec_in_min, elapsed, kpos);
 
         size_t copy_n = std::min(pcm.size(), (size_t)(GFSK8_RX_SAMPLE_SIZE - kpos));
         for (size_t i = 0; i < copy_n; ++i) {
@@ -102,17 +94,11 @@ int main()
         // --- Decode ---
         gfsk8::Decoder decoder(spec.decoderBit);
         int n_decoded = 0;
-        std::string first_msg;
-        std::string first_from;
 
-        decoder.decode(std::span<const int16_t>(snap), 0,
+        decoder.decode(std::span<const int16_t>(snap), nutc,
             [&](const gfsk8::Decoded &d) {
                 printf("  DECODED  snr=%+d dB  freq=%.1f Hz  dt=%.2f s  msg=[%s]\n",
                        d.snrDb, d.frequencyHz, d.dtSeconds, d.message.c_str());
-                if (n_decoded == 0) {
-                    first_msg  = d.message;
-                    first_from = d.message; // full decoded string for now
-                }
                 ++n_decoded;
             });
 

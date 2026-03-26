@@ -27,7 +27,6 @@
 #include "log.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <mutex>
@@ -193,9 +192,11 @@ void Decoder::decode(std::span<std::int16_t const> samples,
     //   kpos    = buffer_end - (elapsed + period_sec) * sample_rate
     // This places the window start at the beginning of the last complete period.
     {
-        auto const epoch_sec = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
-        int const sec_in_minute = static_cast<int>(epoch_sec % 60);
+        // Use the capture-time UTC second passed by the caller (seconds since
+        // midnight, i.e. nutc = H*3600 + M*60 + S) so the decode window is
+        // aligned to the buffer's actual end-time, not to whenever this thread
+        // happens to run — which may be seconds later on a loaded system.
+        int const sec_in_minute = nutc % 60;
 
         auto alignedKpos = [&](int sm) -> int {
             int const period_sec = static_cast<int>(GFSK8::Submode::period(sm));
