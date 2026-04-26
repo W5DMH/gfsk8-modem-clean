@@ -1,3 +1,13 @@
+> **Fork notice:** This is a fork of [jfrancis42/gfsk8-modem-clean](https://github.com/jfrancis42/gfsk8-modem-clean) maintained for use in the WSPRChat project by W5DMH.
+>
+> Additions in this fork:
+> - `python/` directory containing a pybind11 wrapper exposing the library to Python
+> - `BUILD_PYTHON_MODULE` CMake option (default ON) controlling whether the Python module builds
+> - `CMAKE_POSITION_INDEPENDENT_CODE` set globally so the static library can be linked into a shared module
+>
+> Upstream is the authoritative source. This fork tracks upstream and adds Python bindings on top.
+>
+> ---
 # gfsk8-modem-clean
 
 A complete ground-up C++20 rewrite of the JS8/FT8 modem, built from first principles

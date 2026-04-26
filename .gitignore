@@ -18,3 +18,4 @@ build-windows/
 *~
 .idea/
 .vscode/
+test_python_decode.py
