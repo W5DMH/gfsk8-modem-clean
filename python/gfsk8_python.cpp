@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <vector>
 #include <sstream>
+#include <cstring>
 
 namespace py = pybind11;
 
@@ -118,8 +119,21 @@ py::class_<gfsk8::Decoded>(m, "Decoded")
           [](gfsk8::Submode submode, int frameType,
              const std::string &message, double audioFrequencyHz) {
               auto pcm = gfsk8::modulate(submode, frameType, message, audioFrequencyHz);
-              // Return as a numpy float32 array
-              return py::array_t<float>(pcm.size(), pcm.data());
+              // Return as a numpy float32 array using the capsule pattern.
+              // We move the vector to the heap and let numpy hold a capsule
+              // that destroys it when the array is GC'd. This avoids the
+              // py::array_t<float>(size) constructor (which has ABI
+              // compatibility issues across numpy 1.x / 2.x with older
+              // pybind11 versions like 2.10.3).
+              auto *owned = new std::vector<float>(std::move(pcm));
+              return py::array_t<float>(
+                  {static_cast<py::ssize_t>(owned->size())},
+                  {sizeof(float)},
+                  owned->data(),
+                  py::capsule(owned, [](void *p) {
+                      delete reinterpret_cast<std::vector<float>*>(p);
+                  })
+              );
           },
           py::arg("submode"),
           py::arg("frame_type"),
