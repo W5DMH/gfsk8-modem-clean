@@ -30,12 +30,15 @@ PYBIND11_MODULE(gfsk8, m) {
 
     // ─── Bitmask constants ───────────────────────────────────────────────
     m.attr("AllSubmodes") = py::int_(gfsk8::AllSubmodes);
-    // Convenience masks (matching the integer values in the Submode enum)
-    m.attr("MASK_NORMAL") = py::int_(0x01);
-    m.attr("MASK_FAST")   = py::int_(0x02);
-    m.attr("MASK_TURBO")  = py::int_(0x04);
-    m.attr("MASK_SLOW")   = py::int_(0x10);  // Slow=4 in enum, but bitmask bit 0x10 per AllSubmodes layout
-    m.attr("MASK_ULTRA")  = py::int_(0x08);
+    // Decoder engine-selection bits. These are NOT the Submode enum values:
+    // the decoder tests (nsubmodes & (1 << shift)) against the dispatch table
+    // in js8codec.cpp, which registers the engines in the order
+    // I=4, E=3, C=2, B=1, A=0 — that is Normal, Fast, Turbo, Slow, Ultra.
+    m.attr("MASK_NORMAL") = py::int_(0x01);  // ModeA
+    m.attr("MASK_FAST")   = py::int_(0x02);  // ModeB
+    m.attr("MASK_TURBO")  = py::int_(0x04);  // ModeC
+    m.attr("MASK_SLOW")   = py::int_(0x08);  // ModeE
+    m.attr("MASK_ULTRA")  = py::int_(0x10);  // ModeI
 
     // Buffer size constants (from JS8Call convention)
     m.attr("RX_SAMPLE_SIZE") = py::int_(720000);  // 60 seconds at 12 kHz
