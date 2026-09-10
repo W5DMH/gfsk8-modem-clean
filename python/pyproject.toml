@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gfsk8"
+version = "0.1.0"
+description = "Python binding for gfsk8-modem-clean (JS8 modem), built from the C++ tree by CMake."
+requires-python = ">=3.11"
+dependencies = ["numpy>=2,<3"]
+
+[tool.setuptools]
+# The extension is the whole package; nothing else ships.
+py-modules = []
